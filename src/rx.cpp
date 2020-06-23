@@ -180,7 +180,7 @@ void Aggregator::process_packet(const uint8_t *buf, size_t size)
 
     if(size == 0) return;
 
-    if (size > MAX_FORWARDER_PACKET_SIZE)
+    if (size > MAX_PACKET_SIZE)
     {
         fprintf(stderr, "long packet (fec payload)\n");
         count_p_bad += 1;
@@ -393,7 +393,7 @@ void Aggregator::apply_fec(int ring_idx)
 void network_loop(int srv_port, Aggregator &agg, int log_interval)
 {
     struct sockaddr_in sockaddr;
-    uint8_t buf[MAX_FORWARDER_PACKET_SIZE];
+    uint8_t buf[MAX_PACKET_SIZE];
 
     uint64_t log_send_ts = 0;
     struct pollfd fds[1];

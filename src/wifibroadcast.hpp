@@ -34,8 +34,7 @@
 #include <sodium.h>
 #include <endian.h>
 
-#define MAX_PACKET_SIZE 1510
-#define MAX_RX_INTERFACES 8
+#define MAX_PACKET_SIZE 1500
 
 using namespace std;
 
@@ -88,7 +87,6 @@ typedef struct {
 
 #define MAX_PAYLOAD_SIZE (MAX_PACKET_SIZE - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES - sizeof(wpacket_hdr_t))
 #define MAX_FEC_PAYLOAD  (MAX_PACKET_SIZE - sizeof(wblock_hdr_t) - crypto_aead_chacha20poly1305_ABYTES)
-#define MAX_FORWARDER_PACKET_SIZE (MAX_PACKET_SIZE)
 
 int open_udp_socket_for_rx(int port);
 uint64_t get_time_ms(void);

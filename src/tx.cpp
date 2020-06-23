@@ -97,7 +97,7 @@ void Transmitter::make_session_key(void)
 
 void Transmitter::send_block_fragment(size_t packet_size)
 {
-    uint8_t ciphertext[MAX_FORWARDER_PACKET_SIZE];
+    uint8_t ciphertext[MAX_PACKET_SIZE];
     wblock_hdr_t *block_hdr = (wblock_hdr_t*)ciphertext;
     long long unsigned int ciphertext_len;
 
