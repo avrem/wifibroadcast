@@ -53,22 +53,6 @@ private:
     wsession_key_t session_key_packet;
 };
 
-
-class PcapTransmitter : public Transmitter
-{
-public:
-    PcapTransmitter(int k, int m, const string &keypair, uint8_t radio_port, const vector<string> &wlans);
-    virtual ~PcapTransmitter();
-    virtual void select_output(int idx) { current_output = idx; }
-private:
-    virtual void inject_packet(const uint8_t *buf, size_t size);
-    uint8_t radio_port;
-    int current_output;
-    uint16_t ieee80211_seq;
-    vector<pcap_t*> ppcap;
-};
-
-
 class UdpTransmitter : public Transmitter
 {
 public:
@@ -87,23 +71,13 @@ public:
 private:
     virtual void inject_packet(const uint8_t *buf, size_t size)
     {
-        wrxfwd_t fwd_hdr = { .wlan_idx = (uint8_t)(rand() % 2) };
-
-        memset(fwd_hdr.antenna, 0xff, sizeof(fwd_hdr.antenna));
-        memset(fwd_hdr.rssi, SCHAR_MIN, sizeof(fwd_hdr.rssi));
-
-        fwd_hdr.antenna[0] = (uint8_t)(rand() % 2);
-        fwd_hdr.rssi[0] = (int8_t)(rand() & 0xff);
-
-        struct iovec iov[2] = {{ .iov_base = (void*)&fwd_hdr,
-                                 .iov_len = sizeof(fwd_hdr)},
-                               { .iov_base = (void*)buf,
+        struct iovec iov[1] = {{ .iov_base = (void*)buf,
                                  .iov_len = size }};
 
         struct msghdr msghdr = { .msg_name = NULL,
                                  .msg_namelen = 0,
                                  .msg_iov = iov,
-                                 .msg_iovlen = 2,
+                                 .msg_iovlen = 1,
                                  .msg_control = NULL,
                                  .msg_controllen = 0,
                                  .msg_flags = 0};

@@ -25,7 +25,6 @@
 #include <poll.h>
 #include <time.h>
 #include <sys/resource.h>
-#include <pcap/pcap.h>
 #include <assert.h>
 
 #include <string>
@@ -95,70 +94,6 @@ void Transmitter::make_session_key(void)
         throw runtime_error("Unable to make session key!");
     }
 }
-
-
-PcapTransmitter::PcapTransmitter(int k, int n, const string &keypair, uint8_t radio_port, const vector<string> &wlans) : Transmitter(k, n, keypair),
-                                                                                                                        radio_port(radio_port),
-                                                                                                                        current_output(0),
-                                                                                                                        ieee80211_seq(0)
-{
-    char errbuf[PCAP_ERRBUF_SIZE];
-    for(auto it=wlans.begin(); it!=wlans.end(); it++)
-    {
-        pcap_t *p = pcap_create(it->c_str(), errbuf);
-        if (p == NULL){
-            throw runtime_error(string_format("Unable to open interface %s in pcap: %s", it->c_str(), errbuf));
-        }
-        if (pcap_set_snaplen(p, 4096) !=0) throw runtime_error("set_snaplen failed");
-        if (pcap_set_promisc(p, 1) != 0) throw runtime_error("set_promisc failed");
-        //if (pcap_set_rfmon(p, 1) !=0) throw runtime_error("set_rfmon failed");
-        if (pcap_set_timeout(p, -1) !=0) throw runtime_error("set_timeout failed");
-        //if (pcap_set_buffer_size(p, 2048) !=0) throw runtime_error("set_buffer_size failed");
-        if (pcap_activate(p) !=0) throw runtime_error(string_format("pcap_activate failed: %s", pcap_geterr(p)));
-        //if (pcap_setnonblock(p, 1, errbuf) != 0) throw runtime_error(string_format("set_nonblock failed: %s", errbuf));
-
-        ppcap.push_back(p);
-    }
-}
-
-
-void PcapTransmitter::inject_packet(const uint8_t *buf, size_t size)
-{
-    uint8_t txbuf[MAX_PACKET_SIZE];
-    uint8_t *p = txbuf;
-
-    assert(size <= MAX_FORWARDER_PACKET_SIZE);
-
-    // radiotap header
-    memcpy(p, radiotap_header, sizeof(radiotap_header));
-    p += sizeof(radiotap_header);
-
-    // ieee80211 header
-    memcpy(p, ieee80211_header, sizeof(ieee80211_header));
-    p[SRC_MAC_LASTBYTE] = radio_port;
-    p[DST_MAC_LASTBYTE] = radio_port;
-    p[FRAME_SEQ_LB] = ieee80211_seq & 0xff;
-    p[FRAME_SEQ_HB] = (ieee80211_seq >> 8) & 0xff;
-    ieee80211_seq += 16;
-    p += sizeof(ieee80211_header);
-
-    // FEC data
-    memcpy(p, buf, size);
-    p += size;
-
-    if (pcap_inject(ppcap[current_output], txbuf, p - txbuf) != p - txbuf)
-    {
-        throw runtime_error(string_format("Unable to inject packet"));
-    }
-}
-
-PcapTransmitter::~PcapTransmitter()
-{
-    for(auto it=ppcap.begin(); it != ppcap.end(); it++){
-        pcap_close(*it);
-    }
-}
-
 
 void Transmitter::send_block_fragment(size_t packet_size)
 {
@@ -288,18 +223,12 @@ void video_source(shared_ptr<Transmitter> &t, vector<int> &tx_fd)
 int main(int argc, char * const *argv)
 {
     int opt;
-    uint8_t k=8, n=12, radio_port=1;
+    uint8_t k=8, n=12;
     int udp_port=5600;
 
-    int bandwidth = 20;
-    int short_gi = 0;
-    int stbc = 0;
-    int ldpc = 0;
-    int mcs_index = 1;
+    string keypair = "drone.key";
 
-    string keypair = "tx.key";
-
-    while ((opt = getopt(argc, argv, "K:k:n:u:r:p:B:G:S:L:M:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:u:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -313,30 +242,12 @@ int main(int argc, char * const *argv)
         case 'u':
             udp_port = atoi(optarg);
             break;
-        case 'p':
-            radio_port = atoi(optarg);
-            break;
-        case 'B':
-            bandwidth = atoi(optarg);
-            break;
-        case 'G':
-            short_gi = (optarg[0] == 's' || optarg[0] == 'S') ? 1 : 0;
-            break;
-        case 'S':
-            stbc = atoi(optarg);
-            break;
-        case 'L':
-            ldpc = atoi(optarg);
-            break;
-        case 'M':
-            mcs_index = atoi(optarg);
-            break;
         default: /* '?' */
         show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] [-p radio_port] [-B bandwidth] [-G guard_interval] [-S stbc] [-L ldpc] [-M mcs_index] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] interface1 [interface2] ...\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d, radio_port=%d bandwidth=%d guard_interval=%s stbc=%d ldpc=%d mcs_index=%d\n",
-                    keypair.c_str(), k, n, udp_port, radio_port, bandwidth, short_gi ? "short" : "long", stbc, ldpc, mcs_index);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d\n",
+                    keypair.c_str(), k, n, udp_port);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB version " WFB_VERSION "\n");
             exit(1);
@@ -347,68 +258,21 @@ int main(int argc, char * const *argv)
         goto show_usage;
     }
 
-    // Set flags in radiotap header
-    {
-        uint8_t flags = 0;
-        switch(bandwidth) {
-        case 20:
-            flags |= IEEE80211_RADIOTAP_MCS_BW_20;
-            break;
-        case 40:
-            flags |= IEEE80211_RADIOTAP_MCS_BW_40;
-            break;
-        default:
-            fprintf(stderr, "Unsupported bandwidth: %d\n", bandwidth);
-            exit(1);
-        }
-
-        if(short_gi)
-        {
-            flags |= IEEE80211_RADIOTAP_MCS_SGI;
-        }
-
-        switch(stbc) {
-        case 0:
-            break;
-        case 1:
-            flags |= (IEEE80211_RADIOTAP_MCS_STBC_1 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
-            break;
-        case 2:
-            flags |= (IEEE80211_RADIOTAP_MCS_STBC_2 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
-            break;
-        case 3:
-            flags |= (IEEE80211_RADIOTAP_MCS_STBC_3 << IEEE80211_RADIOTAP_MCS_STBC_SHIFT);
-            break;
-        default:
-            fprintf(stderr, "Unsupported STBC type: %d\n", stbc);
-            exit(1);
-        }
-
-        if(ldpc)
-        {
-            flags |= IEEE80211_RADIOTAP_MCS_FEC_LDPC;
-        }
-
-        radiotap_header[MCS_FLAGS_OFF] = flags;
-        radiotap_header[MCS_IDX_OFF] = mcs_index;
-    }
     try
     {
         vector<int> tx_fd;
         vector<string> wlans;
-        for(int i = 0; optind + i < argc; i++)
+        int i;
+        for(i = 0; optind + i < argc; i++)
         {
             int fd = open_udp_socket_for_rx(udp_port + i);
-            fprintf(stderr, "Listen on %d for %s\n", udp_port + i, argv[optind + i]);
+            fprintf(stderr, "Listen on %d\n", udp_port + i);
             tx_fd.push_back(fd);
             wlans.push_back(string(argv[optind + i]));
         }
 
-#ifdef DEBUG_TX
-        shared_ptr<Transmitter>t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", 5601 + i));
-#else
-        shared_ptr<Transmitter>t = shared_ptr<PcapTransmitter>(new PcapTransmitter(k, n, keypair, radio_port, wlans));
-#endif
+        shared_ptr<Transmitter>t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", udp_port + i));
+        fprintf(stderr, "UDP output to %d\n", udp_port + i);
 
         video_source(t, tx_fd);
     }catch(runtime_error &e)
