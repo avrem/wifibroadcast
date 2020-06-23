@@ -155,8 +155,11 @@ void Transmitter::send_packet(const uint8_t *buf, size_t size)
     }
 }
 
-void video_source(shared_ptr<Transmitter> &t, vector<int> &tx_fd)
+void video_source(Transmitter *t, int _tx_fd)
 {
+    vector<int> tx_fd;
+    tx_fd.push_back(_tx_fd);
+
     int nfds = tx_fd.size();
     struct pollfd fds[nfds];
     memset(fds, '\0', sizeof(fds));
@@ -224,11 +227,13 @@ int main(int argc, char * const *argv)
 {
     int opt;
     uint8_t k=8, n=12;
-    int udp_port=5600;
+    int client_port = 6020;
+    int server_port = 6030;
+    string client_addr = "127.0.0.1";
 
     string keypair = "drone.key";
 
-    while ((opt = getopt(argc, argv, "K:k:n:u:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:k:n:c:u:a:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -239,42 +244,33 @@ int main(int argc, char * const *argv)
         case 'n':
             n = atoi(optarg);
             break;
+        case 'c':
+            client_addr = string(optarg);
+            break;
         case 'u':
-            udp_port = atoi(optarg);
+            client_port = atoi(optarg);
+            break;
+        case 'a':
+            server_port = atoi(optarg);
             break;
         default: /* '?' */
-        show_usage:
-            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N] [-u udp_port] interface1 [interface2] ...\n",
+            fprintf(stderr, "Usage: %s [-K tx_key] [-k RS_K] [-n RS_N]  [-c client_addr] [-u client_port] [-a server_port]\n",
                     argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, udp_port=%d\n",
-                    keypair.c_str(), k, n, udp_port);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, connect=%s:%d, server_port=%d\n",
+                    keypair.c_str(), k, n, client_addr.c_str(), client_port, server_port);
             fprintf(stderr, "Radio MTU: %lu\n", (unsigned long)MAX_PAYLOAD_SIZE);
             fprintf(stderr, "WFB version " WFB_VERSION "\n");
             exit(1);
         }
     }
 
-    if (optind >= argc) {
-        goto show_usage;
-    }
-
     try
     {
-        vector<int> tx_fd;
-        vector<string> wlans;
-        int i;
-        for(i = 0; optind + i < argc; i++)
-        {
-            int fd = open_udp_socket_for_rx(udp_port + i);
-            fprintf(stderr, "Listen on %d\n", udp_port + i);
-            tx_fd.push_back(fd);
-            wlans.push_back(string(argv[optind + i]));
-        }
+        auto t = UdpTransmitter(k, n, keypair, client_addr, client_port);
+        int fd = open_udp_socket_for_rx(server_port);
+        fprintf(stderr, "Casting :%d to %s:%d\n", server_port, client_addr.c_str(), client_port);
 
-        shared_ptr<Transmitter>t = shared_ptr<UdpTransmitter>(new UdpTransmitter(k, n, keypair, "127.0.0.1", udp_port + i));
-        fprintf(stderr, "UDP output to %d\n", udp_port + i);
-
-        video_source(t, tx_fd);
+        video_source(&t, fd);
     }catch(runtime_error &e)
     {
         fprintf(stderr, "Error: %s\n", e.what());
