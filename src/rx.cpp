@@ -469,12 +469,12 @@ int main(int argc, char* const *argv)
     int opt;
     uint8_t k = 8, n = 12;
     int log_interval = 1000;
-    int client_port = 5600;
-    int srv_port = 0;
+    int client_port = 6000;
+    int srv_port = 6020;
     string client_addr = "127.0.0.1";
     string keypair = "gs.key";
 
-    while ((opt = getopt(argc, argv, "K:fa:k:n:c:u:l:")) != -1) {
+    while ((opt = getopt(argc, argv, "K:a:k:n:c:u:l:")) != -1) {
         switch (opt) {
         case 'K':
             keypair = optarg;
@@ -498,9 +498,8 @@ int main(int argc, char* const *argv)
             log_interval = atoi(optarg);
             break;
         default: /* '?' */
-            fprintf(stderr, "Local receiver: %s [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-l log_interval] interface1 [interface2] ...\n", argv[0]);
-            fprintf(stderr, "Remote (aggregator): %s -a server_port [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-l log_interval]\n", argv[0]);
-            fprintf(stderr, "Default: K='%s', k=%d, n=%d, connect=%s:%d, log_interval=%d\n", keypair.c_str(), k, n, client_addr.c_str(), client_port, log_interval);
+            fprintf(stderr, "Usage: %s [-a server_port] [-K rx_key] [-k RS_K] [-n RS_N] [-c client_addr] [-u client_port] [-l log_interval]\n", argv[0]);
+            fprintf(stderr, "Default: K='%s', k=%d, n=%d, connect=%s:%d, server_port=%d, log_interval=%d\n", keypair.c_str(), k, n, client_addr.c_str(), client_port, srv_port, log_interval);
             fprintf(stderr, "WFB version " WFB_VERSION "\n");
             exit(1);
         }
@@ -508,8 +507,8 @@ int main(int argc, char* const *argv)
 
     try
     {
-            Aggregator agg(client_addr, client_port, k, n, keypair);
-            network_loop(srv_port, agg, log_interval);
+        Aggregator agg(client_addr, client_port, k, n, keypair);
+        network_loop(srv_port, agg, log_interval);
     }catch(runtime_error &e)
     {
         fprintf(stderr, "Error: %s\n", e.what());
